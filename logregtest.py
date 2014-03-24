@@ -28,10 +28,12 @@ def elasticnet_obj(beta, XtX, XtY, YtY, mylambda=0, myalpha=0):
     return 0.5 * sq_err + l1_penalty + l2_penalty
 
 
-def elasticnet_coordesc(XtX, XtY, YtY, mylambda=0, myalpha=0,
+def elasticnet_coordesc(XtX, XtY, YtY, mylambda=0, myalpha=0, beta_0=None,
                         tol=1e-8, num_iter=np.inf):
     last_score = np.inf
     beta_vec = np.zeros((XtX.shape[0], 1))
+    if beta_0 is not None:
+        beta_vec = beta_0
     index = 0
     while True:
         new_score = elasticnet_obj(beta_vec, XtX, XtY, YtY, mylambda, myalpha)
@@ -62,8 +64,8 @@ def kfold_split(X, y, K=5):
     return X_list, y_list
 
 
-N = 1000
-K = 20
+N = 100
+K = 50
 sig = np.random.randn(N, 1)
 w = [(K - k - 1) / (0.5 * K * (K-1)) for k in range(K)]
 X = 2 * np.random.randn(N, K) + w * sig
@@ -81,16 +83,18 @@ YtY = np.dot(y.T, y)
 beta = np.linalg.solve(XtX, XtY)
 print beta.T
 print elasticnet_obj(beta, XtX, XtY, YtY)
+
+
+mylambda = 10
+myalpha = 1
 '''using generic elastic net coor desc'''
 XtX = np.dot(X.T, X)
 XtY = np.dot(X.T, y)
 YtY = np.dot(y.T, y)
-beta_vec = elasticnet_coordesc(XtX, XtY, YtY)
+beta_vec = elasticnet_coordesc(XtX, XtY, YtY, mylambda, myalpha)
 print beta_vec.T
 print elasticnet_obj(beta_vec, XtX, XtY, YtY)
 
-mylambda = 0
-myalpha = 1
 num_fold = 5
 X_list, y_list = kfold_split(X, y, num_fold)
 XtX_list = [np.dot(X_i.T, X_i) for X_i in X_list]
@@ -102,7 +106,7 @@ XtY_all = np.dot(X.T, y)
 YtY_all = np.dot(y.T, y)
 
 
-lambda_list = [10 ** (lam - 6) for lam in range(13)]
+lambda_list = [10 ** (lam/4. - 6) for lam in range(49)]
 for mylambda in lambda_list:
     cv_score = 0
     for XtX_i, XtY_i, YtY_i in zip(XtX_list, XtY_list, YtY_list):
@@ -110,13 +114,15 @@ for mylambda in lambda_list:
                                       YtY_all - YtY_i, mylambda, myalpha)
         #beta_vec = np.linalg.solve(XtX_all - XtX_i, XtY_all - XtY_i)
         #print beta_vec.T
-        cv_i = elasticnet_obj(beta_cv, XtX_i, XtY_i, YtY_i, mylambda, myalpha)
+        cv_i = elasticnet_obj(beta_cv, XtX_i, XtY_i, YtY_i)  # unpenalized score
         cv_score += cv_i
     beta_all = elasticnet_coordesc(XtX_all, XtY_all, YtY_all,
                                    mylambda, myalpha)
-    in_score = elasticnet_obj(beta_all, XtX_all, XtY_all, YtY_all,
-                              mylambda, myalpha)
+    in_score = elasticnet_obj(beta_all, XtX_all, XtY_all, YtY_all)  # unpenalized score
     print mylambda, cv_score, in_score
+    ## lower numbers are better
+
+## unpenalized CV
 
 
 ''' Classification '''
@@ -162,9 +168,11 @@ for ii in range(10):
     ## Iterative inside Reduce function for convergence
     ## Additive because of OLS properties
     #beta = np.linalg.solve(XtWX, XtWZ)
-    beta = elasticnet_coordesc(XtWX, XtWZ, ZtWZ, mylambda=0, myalpha=0, tol=1e-8)
-smart
-    ols_score = elasticnet_obj(beta, XtWX, XtWZ, ZtWZ, mylambda=0, myalpha=0)  # Approx score
+    beta = elasticnet_coordesc(XtWX, XtWZ, ZtWZ,
+                               mylambda=0, myalpha=0, tol=1e-8)
+
+    ols_score = elasticnet_obj(beta, XtWX, XtWZ, ZtWZ,
+                               mylambda=0, myalpha=0)  # Approx score
     logl = np.dot(np.dot(beta.T, X.T), y) - np.sum(log(1 - P))  # Exact score
     print ii, ols_score, logl
 print beta.T
