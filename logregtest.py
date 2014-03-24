@@ -28,13 +28,14 @@ def elasticnet_obj(beta, XtX, XtY, YtY, mylambda=0, myalpha=0):
     return 0.5 * sq_err + l1_penalty + l2_penalty
 
 
-def elasticnet_coordesc(XtX, XtY, YtY, mylambda=0, myalpha=0, tol=1e-8):
+def elasticnet_coordesc(XtX, XtY, YtY, mylambda=0, myalpha=0,
+                        tol=1e-8, num_iter=np.inf):
     last_score = np.inf
     beta_vec = np.zeros((XtX.shape[0], 1))
     index = 0
     while True:
         new_score = elasticnet_obj(beta_vec, XtX, XtY, YtY, mylambda, myalpha)
-        if last_score - new_score < tol:
+        if last_score - new_score < tol or index > num_iter:
             break
         else:
             last_score = new_score
@@ -49,34 +50,74 @@ def elasticnet_coordesc(XtX, XtY, YtY, mylambda=0, myalpha=0, tol=1e-8):
     return beta_vec
 
 
-N = 100000
-K = 50
+def kfold_split(X, y, K=5):
+    X_list = []
+    y_list = []
+    n = y.shape[0]
+    for k in range(K):
+        start_idx = int(k * n / K)
+        end_idx = int((k + 1) * n / K)
+        X_list.append(X[start_idx:end_idx, :])
+        y_list.append(y[start_idx:end_idx, :])
+    return X_list, y_list
+
+
+N = 1000
+K = 20
 sig = np.random.randn(N, 1)
-X = np.random.randn(N, K) + sig
+w = [(K - k - 1) / (0.5 * K * (K-1)) for k in range(K)]
+X = 2 * np.random.randn(N, K) + w * sig
 y = np.random.randn(N, 1) + sig
+
+linear = linear_model.LinearRegression(fit_intercept=False)
+linear.fit(X, y)
+print linear.coef_
+print linear.score(X, y)
+
+'''using solver'''
 XtX = np.dot(X.T, X)
 XtY = np.dot(X.T, y)
 YtY = np.dot(y.T, y)
-sumY = np.sum(y)
-n = y.shape[0]
-
-linear = linear_model.LinearRegression(fit_intercept=False)
-%time linear.fit(X, y)
-print linear.coef_
-print linear.score(X, y)
-print elasticnet_obj(linear.coef_.T, XtX, XtY, YtY)
-
-%time beta = np.linalg.solve(XtX, XtY)
+beta = np.linalg.solve(XtX, XtY)
 print beta.T
 print elasticnet_obj(beta, XtX, XtY, YtY)
-
-%time beta_vec = elasticnet_coordesc(XtX, XtY, YtY)
+'''using generic elastic net coor desc'''
+XtX = np.dot(X.T, X)
+XtY = np.dot(X.T, y)
+YtY = np.dot(y.T, y)
+beta_vec = elasticnet_coordesc(XtX, XtY, YtY)
 print beta_vec.T
 print elasticnet_obj(beta_vec, XtX, XtY, YtY)
 
-expVar = n * np.dot(beta.T, XtY) - sumY ** 2
-totVar = n * YtY - sumY ** 2
-print expVar / totVar
+mylambda = 0
+myalpha = 1
+num_fold = 5
+X_list, y_list = kfold_split(X, y, num_fold)
+XtX_list = [np.dot(X_i.T, X_i) for X_i in X_list]
+XtY_list = [np.dot(X_i.T, y_i) for X_i, y_i in zip(X_list, y_list)]
+YtY_list = [np.dot(y_i.T, y_i) for y_i in y_list]
+
+XtX_all = np.dot(X.T, X)
+XtY_all = np.dot(X.T, y)
+YtY_all = np.dot(y.T, y)
+
+
+lambda_list = [10 ** (lam - 6) for lam in range(13)]
+for mylambda in lambda_list:
+    cv_score = 0
+    for XtX_i, XtY_i, YtY_i in zip(XtX_list, XtY_list, YtY_list):
+        beta_cv = elasticnet_coordesc(XtX_all - XtX_i, XtY_all - XtY_i,
+                                      YtY_all - YtY_i, mylambda, myalpha)
+        #beta_vec = np.linalg.solve(XtX_all - XtX_i, XtY_all - XtY_i)
+        #print beta_vec.T
+        cv_i = elasticnet_obj(beta_cv, XtX_i, XtY_i, YtY_i, mylambda, myalpha)
+        cv_score += cv_i
+    beta_all = elasticnet_coordesc(XtX_all, XtY_all, YtY_all,
+                                   mylambda, myalpha)
+    in_score = elasticnet_obj(beta_all, XtX_all, XtY_all, YtY_all,
+                              mylambda, myalpha)
+    print mylambda, cv_score, in_score
+
 
 ''' Classification '''
 
