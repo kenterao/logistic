@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Mar 22 18:34:54 2014
+Created on Mon Mar 24 11:10:51 2014
 
-@author: Ken
+@author: kterao
 """
+
 import numpy as np
 from sklearn import linear_model
+import matplotlib.pyplot as plt
 
 
 def soft_thresh(x, thresh):
@@ -64,11 +66,12 @@ def kfold_split(X, y, K=5):
     return X_list, y_list
 
 
-N = 100
-K = 50
+N = 10000
+K = 100
 sig = np.random.randn(N, 1)
-w = [(K - k - 1) / (0.5 * K * (K-1)) for k in range(K)]
-X = 2 * np.random.randn(N, K) + w * sig
+w = [0.4, 0.3, 0.2, 0.1]
+w.extend([0.0] * (K - 4))
+X = np.random.randn(N, K) + w * sig
 y = np.random.randn(N, 1) + sig
 
 linear = linear_model.LinearRegression(fit_intercept=False)
@@ -85,7 +88,7 @@ print beta.T
 print elasticnet_obj(beta, XtX, XtY, YtY)
 
 
-mylambda = 10
+mylambda = 2000
 myalpha = 1
 '''using generic elastic net coor desc'''
 XtX = np.dot(X.T, X)
@@ -95,7 +98,7 @@ beta_vec = elasticnet_coordesc(XtX, XtY, YtY, mylambda, myalpha)
 print beta_vec.T
 print elasticnet_obj(beta_vec, XtX, XtY, YtY)
 
-num_fold = 5
+num_fold = 10
 X_list, y_list = kfold_split(X, y, num_fold)
 XtX_list = [np.dot(X_i.T, X_i) for X_i in X_list]
 XtY_list = [np.dot(X_i.T, y_i) for X_i, y_i in zip(X_list, y_list)]
@@ -105,23 +108,37 @@ XtX_all = np.dot(X.T, X)
 XtY_all = np.dot(X.T, y)
 YtY_all = np.dot(y.T, y)
 
-
-lambda_list = [10 ** (lam/4. - 6) for lam in range(49)]
+beta_cv = [np.zeros((K, 1))] * num_fold
+cv_score_list = []
+in_score_list = []
+lambda_list = [1000 * 0.95 ** lam for lam in range(100)]
 for mylambda in lambda_list:
     cv_score = 0
-    for XtX_i, XtY_i, YtY_i in zip(XtX_list, XtY_list, YtY_list):
-        beta_cv = elasticnet_coordesc(XtX_all - XtX_i, XtY_all - XtY_i,
-                                      YtY_all - YtY_i, mylambda, myalpha)
-        #beta_vec = np.linalg.solve(XtX_all - XtX_i, XtY_all - XtY_i)
-        #print beta_vec.T
-        cv_i = elasticnet_obj(beta_cv, XtX_i, XtY_i, YtY_i)  # unpenalized score
-        cv_score += cv_i
+    for i, (XtX_i, XtY_i, YtY_i) in enumerate(zip(XtX_list, XtY_list, YtY_list)):
+        beta_cv[i] = elasticnet_coordesc(XtX_all - XtX_i, XtY_all - XtY_i,
+                                         YtY_all - YtY_i, mylambda, myalpha,
+                                         beta_cv[i])
+        #print beta_cv.T
+        cv_score += elasticnet_obj(beta_cv[i], XtX_i, XtY_i, YtY_i)
+
     beta_all = elasticnet_coordesc(XtX_all, XtY_all, YtY_all,
                                    mylambda, myalpha)
-    in_score = elasticnet_obj(beta_all, XtX_all, XtY_all, YtY_all)  # unpenalized score
-    print mylambda, cv_score, in_score
+    in_score = elasticnet_obj(beta_all, XtX_all, XtY_all, YtY_all)
+    #print mylambda, beta_all.T
+    #print mylambda, cv_score[0]
+    cv_score_list.append(cv_score[0])
+    in_score_list.append(in_score[0])
     ## lower numbers are better
 
+cv_unreg_score = 0
+for XtX_i, XtY_i, YtY_i in zip(XtX_list, XtY_list, YtY_list):
+    beta_unreg = np.linalg.solve(XtX_all - XtX_i, XtY_all - XtY_i)
+    cv_unreg_score += elasticnet_obj(beta_unreg, XtX_i, XtY_i, YtY_i)
+print cv_unreg_score
+
+plt.plot(np.log10(lambda_list), cv_score_list)
+plt.plot(np.log10(lambda_list), in_score_list)
+plt.show()
 ## unpenalized CV
 
 
@@ -172,43 +189,10 @@ for ii in range(10):
                                mylambda=0, myalpha=0, tol=1e-8)
 
     ols_score = elasticnet_obj(beta, XtWX, XtWZ, ZtWZ,
-                               mylambda=0, myalpha=0)  # Approx score
-    logl = np.dot(np.dot(beta.T, X.T), y) - np.sum(log(1 - P))  # Exact score
+                               mylambda=0, myalpha=0) # Approx score
+    logl = np.dot(np.dot(beta.T, X.T), y) - np.sum(log(1 - P)) # Exact score
     print ii, ols_score, logl
 print beta.T
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
